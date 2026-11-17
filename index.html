@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>Shadow Clash - Fantasy Arena</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#080b13;color:#fff;font-family:Arial,sans-serif;overflow:hidden;touch-action:none}
+#game{position:fixed;inset:0}canvas{width:100%;height:100%;display:block}
+#hud{position:fixed;z-index:2;top:12px;left:3%;right:3%;display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;text-shadow:0 2px 5px #000}
+.side{display:flex;align-items:center;gap:8px}.side.right{flex-direction:row-reverse}.fighterName{font-weight:900;font-size:12px;white-space:nowrap;color:#ffe1a0}.bar{height:17px;flex:1;background:#401b28;border:2px solid #f7e9d0;border-radius:20px;overflow:hidden;box-shadow:0 2px 8px #000}.fill{height:100%;width:100%;background:linear-gradient(90deg,#28d17c,#b5ed66)}#ehp{background:linear-gradient(90deg,#ffbd48,#ed334c)}#timer{font-size:20px;font-weight:900;color:#ffe07b;min-width:38px;text-align:center}
+#logo{position:fixed;top:42px;left:0;right:0;text-align:center;font-weight:1000;letter-spacing:3px;font-size:clamp(16px,3vw,26px);color:#ffcf67;text-shadow:0 3px 10px #000;pointer-events:none}
+#sub{position:fixed;top:72px;left:0;right:0;text-align:center;color:#f1c9b0;font-size:10px;letter-spacing:2px;text-shadow:0 2px 5px #000;pointer-events:none}
+#controls{position:fixed;z-index:3;left:0;right:0;bottom:14px;padding:0 3%;display:flex;justify-content:space-between;align-items:end;pointer-events:none}.cluster{display:flex;gap:7px;align-items:end;pointer-events:auto}button{touch-action:none;border:1px solid #ffffff55;background:#17243be8;color:white;border-radius:14px;min-width:49px;height:53px;padding:0 10px;font-weight:900;font-size:12px;box-shadow:0 4px 0 #05070c}button:active{transform:translateY(3px);filter:brightness(1.4)}.attack{background:#8c2639eF}.power{background:#6337a6ef;min-width:65px}.guard{background:#236d70ef}
+#tip{position:fixed;bottom:76px;left:0;right:0;text-align:center;font-size:11px;color:#f2e3ce;text-shadow:0 2px 5px #000;pointer-events:none}
+#overlay{position:fixed;z-index:5;inset:0;background:#03050bdc;display:flex;align-items:center;justify-content:center;padding:18px}.panel{width:min(430px,95vw);background:linear-gradient(145deg,#2b1d2b,#111b2a);border:2px solid #dcae55;border-radius:20px;padding:22px;text-align:center;box-shadow:0 15px 55px #000}.panel h1{color:#ffd477;letter-spacing:2px;margin:0 0 8px}.panel p{font-size:14px;line-height:1.5;color:#eee0d5}.choices{display:flex;gap:8px;justify-content:center;margin:14px 0}.choices button{height:auto;padding:11px 12px;background:#26334b}.choices button.sel{outline:2px solid #ffd477;background:#694052}#start{height:auto;padding:14px 25px;background:#edbd55;color:#1b1010;font-size:16px}
+</style></head><body>
+<div id="game"></div>
+<div id="hud"><div class="side"><span class="fighterName">YOUR FIGHTER</span><div class="bar"><div id="php" class="fill"></div></div></div><div id="timer">99</div><div class="side right"><span class="fighterName">SHADOW BOSS</span><div class="bar"><div id="ehp" class="fill"></div></div></div></div>
+<div id="logo">SHADOW CLASH</div><div id="sub">FANTASY KOMBAT ARENA</div>
+<div id="tip">Move ◀ ▶ · Jump · Block · Punch · Kick · Special Fire</div>
+<div id="controls"><div class="cluster"><button id="left">◀</button><button id="right">▶</button><button id="jump">JUMP</button></div><div class="cluster"><button id="block" class="guard">BLOCK</button><button id="punch" class="attack">PUNCH</button><button id="kick" class="attack">KICK</button><button id="special" class="power">FIRE ⚡</button></div></div>
+<div id="overlay"><div class="panel"><h1 id="heading">SHADOW CLASH</h1><p id="message">Enter the fantasy arena. Defeat the Shadow Boss with punches, kicks and blazing special attacks. Block enemy strikes and survive!</p><div class="choices"><button id="ember" class="sel">EMBER 🔥</button><button id="frost">FROST ❄️</button></div><button id="start">ENTER THE ARENA</button><p style="font-size:11px">Original fantasy fighting game · Mobile friendly</p></div></div>
+<script>
+(()=> {
+const root=document.getElementById('game'),overlay=document.getElementById('overlay');
+const canvas=document.createElement('canvas'),ctx=canvas.getContext('2d');root.appendChild(canvas);
+let W=960,H=540,dpr=1;function resize(){dpr=Math.min(devicePixelRatio||1,2);W=Math.max(320,innerWidth);H=Math.max(320,innerHeight);canvas.width=W*dpr;canvas.height=H*dpr;canvas.style.width=W+'px';canvas.style.height=H+'px';ctx.setTransform(dpr,0,0,dpr,0,0)}addEventListener('resize',resize);resize();
+const ground=()=>H*.78;
+let selected=0,player,boss,active=false,keys={},frame=0,time=99,last=0,particles=[],projectiles=[],shake=0;
+const themes=[{name:'EMBER',body:'#b94b32',glow:'#ff9a42',energy:'#ff4b22'},{name:'FROST',body:'#397fae',glow:'#8de9ff',energy:'#49c9ff'}];
+function fighter(x,isBoss,color,glow){return{x,y:0,vx:0,vy:0,hp:100,max:100,face:isBoss?-1:1,boss:isBoss,color,glow,attack:0,kind:'',cool:0,block:false,flash:0,stun:0,jump:0}}
+function reset(){let t=themes[selected];player=fighter(W*.28,false,t.body,t.glow);boss=fighter(W*.72,true,'#542c68','#c77bff');player.y=boss.y=ground();frame=0;time=99;particles=[];projectiles=[];keys={};updateHud()}
+function updateHud(){document.getElementById('php').style.width=player.hp+'%';document.getElementById('ehp').style.width=boss.hp+'%';document.getElementById('timer').textContent=Math.ceil(time)}
+function particle(x,y,color,n=12){for(let i=0;i<n;i++)particles.push({x,y,vx:(Math.random()-.5)*7,vy:(Math.random()-.7)*7,life:25+Math.random()*18,color,r:2+Math.random()*4})}
+function rounded(x,y,w,h,r,color){ctx.fillStyle=color;ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill()}
+function drawBackground(){
+ let g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,'#100e22');g.addColorStop(.5,'#34203c');g.addColorStop(1,'#101927');ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+ // moon and mountain silhouettes
+ ctx.fillStyle='#d78d7040';ctx.beginPath();ctx.arc(W*.5,H*.2,Math.min(W,H)*.11,0,Math.PI*2);ctx.fill();
+ ctx.fillStyle='#151629';ctx.beginPath();ctx.moveTo(0,H*.55);for(let x=0;x<=W+80;x+=80)ctx.lineTo(x,H*(.35+Math.random()*.08));ctx.lineTo(W,H);ctx.lineTo(0,H);ctx.fill();
+ // torches
+ for(let x of [W*.08,W*.92]){ctx.fillStyle='#48313d';ctx.fillRect(x-8,H*.34,16,H*.4);ctx.shadowBlur=25;ctx.shadowColor='#ff7b36';ctx.fillStyle='#ff9b45';ctx.beginPath();ctx.ellipse(x,H*.34,8,18,0,0,7);ctx.fill();ctx.shadowBlur=0}
+ let gy=ground();ctx.fillStyle='#211c2a';ctx.fillRect(0,gy,W,H-gy);ctx.fillStyle='#bd8b51';ctx.fillRect(0,gy,W,5);ctx.strokeStyle='#ffffff17';ctx.lineWidth=2;for(let x=0;x<W;x+=70){ctx.beginPath();ctx.moveTo(x,gy+10);ctx.lineTo(x-35,H);ctx.stroke()}
+}
+function drawFighter(f){
+ let x=f.x,y=f.y,dir=f.face,scale=Math.max(.72,Math.min(1.25,H/600));ctx.save();ctx.translate(x,y);ctx.scale(dir*scale,scale);
+ // shadow
+ ctx.fillStyle='#0008';ctx.beginPath();ctx.ellipse(0,0,42,10,0,0,7);ctx.fill();
+ if(f.flash>0&&Math.floor(f.flash/3)%2===0)ctx.globalAlpha=.5;
+ // legs
+ let kick=f.attack>0&&f.kind==='kick';rounded(-22,-76,17,66,8,'#171c2b');rounded(5,-76,kick?48:17,66,8,kick?f.glow:'#171c2b');
+ // boots
+ rounded(-27,-18,27,14,5,'#c3a17c');rounded(kick?38:0,-18,28,14,5,'#c3a17c');
+ // body armor
+ rounded(-29,-151,58,80,13,f.color);rounded(-25,-145,50,12,5,f.glow);
+ // chest emblem
+ ctx.fillStyle=f.glow;ctx.beginPath();ctx.moveTo(0,-132);ctx.lineTo(12,-119);ctx.lineTo(0,-105);ctx.lineTo(-12,-119);ctx.fill();
+ // arms
+ let ext=f.attack>0&&f.kind==='punch'?48:0;
+ rounded(-39,-145,18,62,8,f.color);rounded(21,-145,18+ext,18,8,f.color);
+ rounded(-42,-95,25,22,8,'#d9a47e');rounded(25+ext,-145,25,24,10,f.glow);
+ if(f.block){rounded(22,-160,18,60,8,'#d9a47e');}
+ // head hood
+ ctx.fillStyle='#d5a17c';ctx.beginPath();ctx.arc(0,-174,24,0,Math.PI*2);ctx.fill();
+ rounded(-27,-195,54,17,8,f.color);rounded(-25,-176,50,7,3,f.glow);
+ ctx.fillStyle='#171321';ctx.fillRect(6,-179,7,4);
+ // scarf
+ ctx.fillStyle=f.glow;ctx.beginPath();ctx.moveTo(-18,-153);ctx.lineTo(-53,-137);ctx.lineTo(-39,-126);ctx.closePath();ctx.fill();
+ ctx.restore();
+ if(f.block){ctx.strokeStyle=f.glow;ctx.lineWidth=3;ctx.globalAlpha=.6;ctx.beginPath();ctx.arc(x,y-100,58,-1.2,1.2);ctx.stroke();ctx.globalAlpha=1}
+}
+function burst(x,y,color){particle(x,y,color,22);shake=7}
+function hurt(target,amount,source){let dmg=target.block?Math.ceil(amount*.18):amount;target.hp=Math.max(0,target.hp-dmg);target.flash=9;target.stun=target.block?3:9;burst(target.x,target.y-115,target.block?'#f5d58a':source.glow);updateHud();if(target.hp<=0)finish(source===player)}
+function doAttack(f,t,kind){if(!active||f.cool>0||f.stun>0)return;f.kind=kind;f.attack=kind==='special'?25:17;f.cool=kind==='special'?105:kind==='kick'?42:27;
+ if(kind==='special'){if(f===player){projectiles.push({x:f.x+f.face*35,y:f.y-125,vx:f.face*9,life:65,color:f.glow,owner:f});particle(f.x+f.face*35,f.y-125,f.glow,14)}else{projectiles.push({x:f.x+f.face*35,y:f.y-125,vx:f.face*7,life:65,color:f.glow,owner:f})}return}
+ if(Math.abs(t.x-f.x)<112&&Math.sign(t.x-f.x)===f.face){hurt(t,kind==='kick'?13:9,f);t.x+=f.face*18}
+}
+function finish(win){active=false;overlay.style.display='flex';document.getElementById('heading').textContent=win?'FATALITY! YOU WIN':'DEFEAT';document.getElementById('message').textContent=win?'The Shadow Boss has fallen. The arena belongs to you!':'The Shadow Boss defeated you. Choose your fighter and try again.';document.getElementById('start').textContent='FIGHT AGAIN'}
+function jump(){if(active&&player.jump===0){player.vy=-12;player.jump=1}}
+function tick(dt){
+ if(!active)return;frame++;time-=dt;if(time<=0){finish(player.hp>=boss.hp);return}
+ [player,boss].forEach(f=>{f.cool=Math.max(0,f.cool-dt*60);f.attack=Math.max(0,f.attack-dt*60);f.flash=Math.max(0,f.flash-1);f.stun=Math.max(0,f.stun-1);f.y+=f.vy;f.vy+=.55;if(f.y>=ground()){f.y=ground();f.vy=0;f.jump=0}});
+ if(player.stun===0){if(keys.left)player.x-=5;if(keys.right)player.x+=5}player.x=Math.max(45,Math.min(W-45,player.x));player.block=!!keys.block;
+ let diff=player.x-boss.x;boss.face=diff<0?-1:1;player.face=diff>0?1:-1;
+ if(boss.stun===0){if(Math.abs(diff)>85)boss.x+=Math.sign(diff)*2.1;else if(boss.cool<=0){boss.block=Math.random()<.23;doAttack(boss,player,Math.random()<.5?'punch':'kick')}else boss.block=Math.random()<.28}
+ boss.x=Math.max(45,Math.min(W-45,boss.x));
+ projectiles.forEach(p=>{p.x+=p.vx;p.life--;let target=p.owner===player?boss:player;if(Math.abs(p.x-target.x)<35&&Math.abs(p.y-(target.y-120))<65&&p.life>0){hurt(target,20,p.owner);p.life=0}});
+ projectiles=projectiles.filter(p=>p.life>0&&p.x>-30&&p.x<W+30);
+}
+function render(){
+ drawBackground();let gy=ground();
+ // arena glyphs
+ ctx.strokeStyle='#c48c5144';ctx.lineWidth=3;ctx.beginPath();ctx.ellipse(W/2,gy-3,Math.min(W*.32,300),28,0,0,7);ctx.stroke();
+ drawFighter(player);drawFighter(boss);
+ projectiles.forEach(p=>{ctx.shadowBlur=22;ctx.shadowColor=p.color;ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,15,0,7);ctx.fill();ctx.shadowBlur=0;ctx.fillStyle='#fff2c9';ctx.beginPath();ctx.arc(p.x,p.y,6,0,7);ctx.fill()});
+ particles.forEach(p=>{p.x+=p.vx;p.y+=p.vy;p.vy+=.12;p.life--;ctx.globalAlpha=Math.max(0,p.life/40);ctx.fillStyle=p.color;ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,7);ctx.fill();ctx.globalAlpha=1});particles=particles.filter(p=>p.life>0);
+ if(shake>0){shake--;canvas.style.transform=`translate(${(Math.random()-.5)*shake}px,${(Math.random()-.5)*shake}px)`}else canvas.style.transform='';
+}
+let prev=0;function loop(ts){let dt=Math.min((ts-prev)/1000||0,.04);prev=ts;tick(dt);render();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+function choose(n){selected=n;document.getElementById('ember').classList.toggle('sel',n===0);document.getElementById('frost').classList.toggle('sel',n===1)}
+document.getElementById('ember').onclick=()=>choose(0);document.getElementById('frost').onclick=()=>choose(1);
+document.getElementById('start').onclick=()=>{reset();active=true;overlay.style.display='none';document.getElementById('start').textContent='FIGHT AGAIN'};
+function hold(id,k){let b=document.getElementById(id);b.addEventListener('pointerdown',e=>{e.preventDefault();keys[k]=true});['pointerup','pointercancel','pointerleave'].forEach(ev=>b.addEventListener(ev,()=>keys[k]=false))}
+hold('left','left');hold('right','right');hold('block','block');
+document.getElementById('jump').onclick=jump;document.getElementById('punch').onclick=()=>doAttack(player,boss,'punch');document.getElementById('kick').onclick=()=>doAttack(player,boss,'kick');document.getElementById('special').onclick=()=>doAttack(player,boss,'special');
+addEventListener('keydown',e=>{let k=e.key.toLowerCase();if(k==='arrowleft'||k==='a')keys.left=true;if(k==='arrowright'||k==='d')keys.right=true;if(k==='s'||k==='shift')keys.block=true;if(k===' ')jump();if(k==='j')doAttack(player,boss,'punch');if(k==='k')doAttack(player,boss,'kick');if(k==='l')doAttack(player,boss,'special')});
+addEventListener('keyup',e=>{let k=e.key.toLowerCase();if(k==='arrowleft'||k==='a')keys.left=false;if(k==='arrowright'||k==='d')keys.right=false;if(k==='s'||k==='shift')keys.block=false});
+reset();
+})();
+</script></body></html>
